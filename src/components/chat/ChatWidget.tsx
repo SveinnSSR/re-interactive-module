@@ -1,13 +1,12 @@
 // src/components/chat/ChatWidget.tsx
 "use client";
 
-import React, { useState, useEffect, ReactElement, useRef, useCallback, Component } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Component } from 'react';
 import { ChevronDown } from 'lucide-react';
 import Image from 'next/image';
 
 // Constants for session management
 const SESSION_ID_KEY = 'reChatSessionId';
-const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 // Configuration for response effects
 const CHUNK_REVEAL_DELAY = 250;
@@ -41,6 +40,20 @@ interface ChatResponse {
   sessionId: string;
   language: string;
   context: ChatContext;
+}
+
+interface TypingMessage {
+  text: string;
+  visibleChars: number;
+  currentChunk?: number;
+  totalChunks?: number;
+  isComplete: boolean;
+  fadeIn: boolean;
+}
+
+interface MessageFeedback {
+  isPositive: boolean;
+  submitted: boolean;
 }
 
 // Error boundary for graceful error handling
@@ -142,18 +155,9 @@ const ChatWidget = () => {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [sessionId, setSessionId] = useState('');
-  const [context, setContext] = useState<ChatContext>({
-    lastTopic: null,
-    flightTime: null,
-    flightDestination: null,
-    lastServiceType: null,
-    isGroupBooking: false,
-    groupDetails: null,
-    lastQuery: null
-  });
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  const [typingMessages, setTypingMessages] = useState<{[key: string]: any}>({});
-  const [messageFeedback, setMessageFeedback] = useState<{[key: string]: any}>({});
+  const [typingMessages, setTypingMessages] = useState<{[key: string]: TypingMessage}>({});
+  const [messageFeedback, setMessageFeedback] = useState<{[key: string]: MessageFeedback}>({});
   const isMobile = windowWidth <= MOBILE_BREAKPOINT;
 
   // Session management
@@ -189,28 +193,13 @@ const ChatWidget = () => {
     const storedContext = localStorage.getItem('reChatContext');
     if (storedContext) {
       try {
-        setContext(JSON.parse(storedContext));
+        // Parse but don't use - just validate it exists
+        JSON.parse(storedContext);
       } catch (e) {
         console.error('Error parsing stored context:', e);
       }
     }
   }, []);
-
-  // Welcome message
-  useEffect(() => {
-    if (isOpen && messages.length === 0) {
-      const welcomeMessage = "Hello! I'm your AI assistant at Reykjavík Excursions. I can help you with Flybus airport transfers, schedules, and bookings. What would you like to know? 😊";
-      const welcomeId = 'welcome-' + Date.now();
-      
-      setMessages([{
-        type: 'bot',
-        content: welcomeMessage,
-        id: welcomeId
-      }]);
-      
-      renderMessage(welcomeId, welcomeMessage);
-    }
-  }, [isMinimized]);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -226,7 +215,7 @@ const ChatWidget = () => {
   }, [messages, typingMessages]);
 
   // Chunked reveal effect (premium feel)
-  const renderMessage = (messageId: string, fullText: string) => {
+  const renderMessage = useCallback((messageId: string, fullText: string) => {
     if (!fullText) return null;
     
     const safeText = typeof fullText === 'string' ? fullText : String(fullText || '');
@@ -236,7 +225,7 @@ const ChatWidget = () => {
     } else {
       return startChunkedReveal(messageId, safeText);
     }
-  };
+  }, [isMobile]);
 
   const startSimpleRender = (messageId: string, fullText: string) => {
     try {
@@ -322,6 +311,22 @@ const ChatWidget = () => {
       return null;
     }
   };
+
+  // Welcome message
+  useEffect(() => {
+    if (!isMinimized && messages.length === 0) {
+      const welcomeMessage = "Hello! I'm your AI assistant at Reykjavík Excursions. I can help you with Flybus airport transfers, schedules, and bookings. What would you like to know? 😊";
+      const welcomeId = 'welcome-' + Date.now();
+      
+      setMessages([{
+        type: 'bot',
+        content: welcomeMessage,
+        id: welcomeId
+      }]);
+      
+      renderMessage(welcomeId, welcomeMessage);
+    }
+  }, [isMinimized, messages.length, renderMessage]);
 
   const shouldShowFeedback = (message: Message) => {
     if (!message.content) return false;
@@ -409,7 +414,6 @@ const ChatWidget = () => {
       }
 
       if (data.context) {
-        setContext(data.context);
         localStorage.setItem('reChatContext', JSON.stringify(data.context));
       }
 
